@@ -1,47 +1,93 @@
-const CACHE_NAME = 'shadow-gate-v7';
-const DATA_CACHE = 'api-data-v4';
+const CACHE_NAME = 'shadow-gate-v8'; // Atualize a versão
+const DATA_CACHE = 'api-data-v5';
 
 self.addEventListener('install', (e) => {
     e.waitUntil(
         caches.open(CACHE_NAME).then(cache => cache.addAll([
             '/',
+            '/index.html', // Adicione isso
             '/home.html',
             '/dashboard.html',
             '/app.js',
             '/dashboard.js',
             '/dashboard.css',
+            '/_redirects', // Adicione isso
             'https://cdn.tailwindcss.com',
             'https://cdn.jsdelivr.net/npm/chart.js',
             'https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css',
             'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2'
-        ]))
+        ]).catch(err => console.error('Failed to cache', err)) // Adicione tratamento de erro
+    );
+});
+
+self.addEventListener('activate', event => {
+    event.waitUntil(
+        caches.keys().then(keys => Promise.all(
+            keys.filter(key => key !== CACHE_NAME && key !== DATA_CACHE)
+               .map(key => caches.delete(key))
+        ))
     );
 });
 
 self.addEventListener('fetch', (e) => {
     const url = new URL(e.request.url);
     
-    // Handle /:projectId/animes route
-    const pathParts = url.pathname.split('/').filter(part => part !== '');
-    if (pathParts.length === 2 && pathParts[1] === 'animes') {
-        e.respondWith(
-            handleAnimesRequest(pathParts[0])
-        );
-        return;
-    }
-    
-    if (url.pathname.startsWith('/api/')) {
-        e.respondWith(
-            handleApiRequest(e.request)
-        );
+    // Ignora requisições não GET ou de outras origens
+    if (e.request.method !== 'GET' || !url.origin.includes(location.origin)) {
         return;
     }
 
+    // Rotas dinâmicas
+    if (url.pathname.endsWith('/animes') {
+        const pathParts = url.pathname.split('/').filter(Boolean);
+        if (pathParts.length === 2) {
+            e.respondWith(handleAnimesRequest(pathParts[0]));
+            return;
+        }
+    }
+
+    // Estratégia Cache First com fallback para network
     e.respondWith(
-        caches.match(e.request)
-            .then(response => response || fetch(e.request))
+        caches.match(e.request).then(cached => {
+            return cached || fetch(e.request).then(response => {
+                // Não cacheamos respostas opacas (como analytics)
+                if (!response || response.status !== 200 || response.type === 'opaque') {
+                    return response;
+                }
+                
+                // Cache apenas para assets importantes
+                if (e.request.url.includes('/api/') || 
+                    e.request.destination === 'script' || 
+                    e.request.destination === 'style') {
+                    const responseToCache = response.clone();
+                    caches.open(CACHE_NAME).then(cache => cache.put(e.request, responseToCache));
+                }
+                return response;
+            }).catch(() => {
+                // Fallback para página offline se necessário
+                if (e.request.destination === 'document') {
+                    return caches.match('/offline.html');
+                }
+                return new Response('Offline', { status: 503 });
+            });
+        })
     );
 });
+
+// ... (mantenha as outras funções como handleAnimesRequest, getAnimeData, etc.)
+
+async function handleApiOrAnimeRequest(request) {
+  const url = new URL(request.url);
+  const pathParts = url.pathname.split('/').filter(part => part !== '');
+
+  // Rota /:projectId/animes
+  if (pathParts.length === 2 && pathParts[1] === 'animes') {
+    return handleAnimesRequest(pathParts[0]);
+  }
+
+  // Outras rotas de API (se houver)
+  return handleApiRequest(request);
+}
 
 async function handleAnimesRequest(projectId) {
     try {
@@ -152,4 +198,4 @@ async function handleApiRequest(request) {
             } 
         });
     }
-}
+            }
