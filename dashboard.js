@@ -1,5 +1,8 @@
 document.addEventListener('DOMContentLoaded', function() {
     // Carregar dados do projeto
+    // app.js - Parte inicial atualizada
+    
+    
     const projectId = getProjectIdFromUrl();
     const project = loadProject(projectId);
     
@@ -36,7 +39,7 @@ function getProjectIdFromUrl() {
 }
 
 function loadProject(projectId) {
-    const projects = JSON.parse(localStorage.getItem('shadowGateProjects3')) || [];
+    const projects = JSON.parse(localStorage.getItem('shadowGateProjects4')) || [];
     return projects.find(p => p.id === projectId);
 }
 
@@ -249,7 +252,7 @@ function updateChart(days) {
 
 function simulateRequest() {
     const projectId = getProjectIdFromUrl();
-    let projects = JSON.parse(localStorage.getItem('shadowGateProjects3')) || [];
+    let projects = JSON.parse(localStorage.getItem('shadowGateProjects4')) || [];
     const projectIndex = projects.findIndex(p => p.id === projectId);
     
     if (projectIndex >= 0) {
@@ -262,7 +265,7 @@ function simulateRequest() {
             showAlert(`Gate leveled up to level ${currentLevel + 1}!`, 'success');
         }
         
-        localStorage.setItem('shadowGateProjects3', JSON.stringify(projects));
+        localStorage.setItem('shadowGateProjects4', JSON.stringify(projects));
         updateProjectUI(projects[projectIndex]);
     }
 }
