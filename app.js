@@ -1,49 +1,51 @@
 document.addEventListener('DOMContentLoaded', async function() {
     const supabaseUrl = 'https://nwoswxbtlquiekyangbs.supabase.co';
-    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im53b3N3eGJ0bHF1aWVreWFuZ2JzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQ3ODEwMjcsImV4cCI6MjA2MDM1NzAyN30.KarBv9AopQpldzGPamlj3zu9eScKltKKHH2JJblpoCE'; // Sua chave real aqui
+    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im53b3N3eGJ0bHF1aWVreWFuZ2JzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQ3ODEwMjcsImV4cCI6MjA2MDM1NzAyN30.KarBv9AopQpldzGPamlj3zu9eScKltKKHH2JJblpoCE';
     let supabase;
     
+    // Configuração do Service Worker
     if ('serviceWorker' in navigator) {
-  window.addEventListener('load', async () => {
-    try {
-      const registration = await navigator.serviceWorker.register('/sw.js', {
-        scope: '/'
-      });
-      
-      showAlert('Service Worker registrado com sucesso!', 'success');
-      
-      // Verifica se há atualizações
-      registration.addEventListener('updatefound', () => {
-        const newWorker = registration.installing;
-        newWorker.addEventListener('statechange', () => {
-          if (newWorker.state === 'activated') {
-            showAlert('Nova versão disponível! Atualizando...', 'info');
-            window.location.reload();
-          }
-        });
-      });
-    } catch (error) {
-      showAlert(`Falha no registro do Service Worker: ${error.message}`, 'danger');
-      console.error('SW registration failed:', error);
-    }
-  });
-}
+        try {
+            const registration = await navigator.serviceWorker.register('/sw.js', {
+                scope: '/'
+            });
+            
+            showAlert('Service Worker registrado com sucesso!', 'success');
+            
+            // Listener para mensagens do Service Worker
+            navigator.serviceWorker.addEventListener('message', event => {
+                if (event.data.type === 'GET_PROJECTS') {
+                    const projects = JSON.parse(localStorage.getItem('shadowGateProjects4')) || [];
+                    event.ports[0].postMessage(projects);
+                }
+            });
 
+            // Verificar atualizações
+            registration.addEventListener('updatefound', () => {
+                const newWorker = registration.installing;
+                newWorker.addEventListener('statechange', () => {
+                    if (newWorker.state === 'activated') {
+                        showAlert('Nova versão disponível! Atualizando...', 'info');
+                        setTimeout(() => window.location.reload(), 1500);
+                    }
+                });
+            });
+        } catch (error) {
+            showAlert(`Falha no registro do Service Worker: ${error.message}`, 'danger');
+            console.error('SW registration failed:', error);
+        }
+    }
+
+    // Conexão com Supabase
     try {
         supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
         window.supabase = supabase;
-        //showAlert('Conexão com o Supabase estabelecida!', 'success');
         await loadProjects();
         setupForm();
     } catch (error) {
-        showAlert(`Erro: ${error.message}`, 'danger');
+        showAlert(`Erro de conexão: ${error.message}`, 'danger');
     }
 });
-
-// ... (loadProjects permanece igual)
-
-
-// ... (restante das funções permanecem iguais)
 
 function loadProjects() {
     const container = document.getElementById('projectsContainer');
@@ -99,10 +101,9 @@ function setupForm() {
             return;
         }
 
-        let newProject; // Declarar fora do try para acesso no catch
+        let newProject;
         
         try {
-            // Gerar ID único seguro
             const idProject = `gate-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
             
             newProject = {
@@ -117,31 +118,31 @@ function setupForm() {
                 activityData: generateActivityData()
             };
             
-            // Salvar no localStorage
             let projects = JSON.parse(localStorage.getItem('shadowGateProjects4')) || [];
             projects.push(newProject);
             localStorage.setItem('shadowGateProjects4', JSON.stringify(projects));
             
-            // Criar token no Supabase
+            // Atualizar cache do Service Worker
+            await updateServiceWorkerCache();
+            
+            // Registrar no Supabase
             const { error } = await supabase
-                .from('project_tokens') // Nome correto da tabela
+                .from('project_tokens')
                 .insert([{
                     project_id: idProject,
                     created_at: new Date().toISOString()
                 }]);
             
-            if (error) {
-                throw new Error(`Supabase: ${error.message}`);
-            }
+            if (error) throw error;
             
             showAlert('Projeto criado com sucesso!', 'success');
             setTimeout(() => {
-                window.location.href = `dashboard.html?project=${newProject.id}`;
+                window.location.href = `dashboard.html?project=${idProject}`;
             }, 1500);
             
         } catch (error) {
-            const errorMessage = error.message || 'Erro desconhecido';
-            showAlert(`Erro ao criar projeto: ${errorMessage}`, 'warning');
+            showAlert(`Erro ao criar projeto: ${error.message}`, 'danger');
+            console.error('Error creating project:', error);
             
             if (newProject) {
                 setTimeout(() => {
@@ -152,7 +153,6 @@ function setupForm() {
     });
 }
 
-
 function generateActivityData() {
     return {
         '7d': Array.from({length: 7}, () => Math.floor(Math.random() * 50) + 10),
@@ -161,18 +161,15 @@ function generateActivityData() {
     };
 }
 
-async function saveProject(project) {
-    let projects = JSON.parse(localStorage.getItem('shadowGateProjects4')) || [];
-    projects.push(project);
-    localStorage.setItem('shadowGateProjects4', JSON.stringify(projects));
-    await updateServiceWorkerCache();
-}
-
 async function updateServiceWorkerCache() {
     if ('caches' in window) {
-        const cache = await caches.open('shadow-gate-data');
-        const projects = JSON.parse(localStorage.getItem('shadowGateProjects4')) || [];
-        await cache.put('/projects.json', new Response(JSON.stringify(projects)));
+        try {
+            const cache = await caches.open('shadow-gate-data');
+            const projects = JSON.parse(localStorage.getItem('shadowGateProjects4')) || [];
+            await cache.put('/projects.json', new Response(JSON.stringify(projects)));
+        } catch (error) {
+            console.error('Failed to update SW cache:', error);
+        }
     }
 }
 
@@ -181,6 +178,7 @@ function showAlert(message, type) {
     alert.className = `fixed top-4 right-4 p-4 rounded-lg shadow-lg text-white font-semibold tracking-wider z-50 ${
         type === 'success' ? 'bg-green-600' : 
         type === 'danger' ? 'bg-red-600' :
+        type === 'warning' ? 'bg-yellow-600' :
         'bg-blue-600'
     }`;
     alert.textContent = message;
@@ -190,4 +188,4 @@ function showAlert(message, type) {
         alert.classList.add('opacity-0', 'transition-opacity', 'duration-500');
         setTimeout(() => alert.remove(), 500);
     }, 3000);
-}
+                                                                   }
