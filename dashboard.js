@@ -43,6 +43,37 @@ function loadProject(projectId) {
     return projects.find(p => p.id === projectId);
 }
 
+function updateRequestStats(project) {
+    const today = new Date().toISOString().split('T')[0];
+    const requestsToday = project.requestsToday || 0;
+    const dailyPercentage = Math.min(100, (requestsToday / REQUEST_LIMIT_PER_DAY) * 100);
+    
+    document.getElementById('dailyRequests').textContent = requestsToday;
+    document.querySelector('.gate-card:nth-child(2) .h-1.bg-blue-500').style.width = `${dailyPercentage}%`;
+    
+    // Atualizar card de estatísticas se existir
+    const statsCard = document.querySelector('.request-stats-card');
+    if (statsCard) {
+        statsCard.innerHTML = `
+            <h3 class="text-sm font-medium text-gray-300 mb-2 tracking-wider flex items-center">
+                <i class="bi bi-activity text-blue-400 mr-2"></i> REQUEST STATS
+            </h3>
+            <div class="space-y-2">
+                <div class="flex justify-between text-xs">
+                    <span class="text-gray-400">Today:</span>
+                    <span class="text-white">${requestsToday}/${REQUEST_LIMIT_PER_DAY}</span>
+                </div>
+                <div class="h-2 bg-gray-700 rounded-full">
+                    <div class="h-2 bg-blue-500 rounded-full" style="width: ${dailyPercentage}%"></div>
+                </div>
+                <div class="flex justify-between text-xs">
+                    <span class="text-gray-400">Total:</span>
+                    <span class="text-white">${project.totalRequests || 0}</span>
+                </div>
+            </div>
+        `;
+    }
+}
 
 
 function updateProjectUI(project) {
@@ -50,6 +81,7 @@ function updateProjectUI(project) {
     // Adicione esta linha na função updateProjectUI, após definir o apiEndpoint
 document.querySelectorAll('#snippetProjectId, #snippetProjectId2').forEach(el => {
     el.textContent = project.id;
+    updateRequestStats(project);
 });
 
 // Adicione esta seção na área de URLs do Portal (substitua o cartão existente)
