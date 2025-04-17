@@ -5,7 +5,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     if ('serviceWorker' in navigator) {
         try {
-            await navigator.serviceWorker.register('sw.js');
+            await navigator.serviceWorker.register('/sw.js');
             showAlert('Service Worker registered', 'success');
             
             // Listen for messages from SW
