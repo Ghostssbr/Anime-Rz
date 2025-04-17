@@ -11,7 +11,7 @@ document.addEventListener('DOMContentLoaded', async function() {
             // Listen for messages from SW
             navigator.serviceWorker.addEventListener('message', (event) => {
                 if (event.data.type === 'GET_PROJECTS') {
-                    const projects = JSON.parse(localStorage.getItem('shadowGateProjects3')) || [];
+                    const projects = JSON.parse(localStorage.getItem('shadowGateProjects4')) || [];
                     event.ports[0].postMessage(projects);
                 }
             });
@@ -39,7 +39,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 function loadProjects() {
     const container = document.getElementById('projectsContainer');
     const noProjects = document.getElementById('noProjects');
-    const projects = JSON.parse(localStorage.getItem('shadowGateProjects3')) || [];
+    const projects = JSON.parse(localStorage.getItem('shadowGateProjects4')) || [];
     
     container.innerHTML = '';
     noProjects.classList.toggle('hidden', projects.length > 0);
@@ -109,9 +109,9 @@ function setupForm() {
             };
             
             // Salvar no localStorage
-            let projects = JSON.parse(localStorage.getItem('shadowGateProjects')) || [];
+            let projects = JSON.parse(localStorage.getItem('shadowGateProjects4')) || [];
             projects.push(newProject);
-            localStorage.setItem('shadowGateProjects', JSON.stringify(projects));
+            localStorage.setItem('shadowGateProjects4', JSON.stringify(projects));
             
             // Criar token no Supabase
             const { error } = await supabase
@@ -153,16 +153,16 @@ function generateActivityData() {
 }
 
 async function saveProject(project) {
-    let projects = JSON.parse(localStorage.getItem('shadowGateProjects')) || [];
+    let projects = JSON.parse(localStorage.getItem('shadowGateProjects4')) || [];
     projects.push(project);
-    localStorage.setItem('shadowGateProjects', JSON.stringify(projects));
+    localStorage.setItem('shadowGateProjects4', JSON.stringify(projects));
     await updateServiceWorkerCache();
 }
 
 async function updateServiceWorkerCache() {
     if ('caches' in window) {
         const cache = await caches.open('shadow-gate-data');
-        const projects = JSON.parse(localStorage.getItem('shadowGateProjects')) || [];
+        const projects = JSON.parse(localStorage.getItem('shadowGateProjects4')) || [];
         await cache.put('/projects.json', new Response(JSON.stringify(projects)));
     }
 }
