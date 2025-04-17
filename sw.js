@@ -1,4 +1,4 @@
-const CACHE_NAME = 'shadow-gate-v9';
+const CACHE_NAME = 'shadow-gate-v10';
 const CACHE_URLS = [
   '/',
   '/index.html',
@@ -10,6 +10,7 @@ const CACHE_URLS = [
   '/_redirects'
 ];
 
+// Função para enviar alertas para o cliente
 async function sendAlertToClient(message, type) {
   const clients = await self.clients.matchAll();
   clients.forEach(client => {
@@ -20,6 +21,7 @@ async function sendAlertToClient(message, type) {
   });
 }
 
+// Instalação do Service Worker
 self.addEventListener('install', (event) => {
   event.waitUntil(
     (async () => {
@@ -35,6 +37,7 @@ self.addEventListener('install', (event) => {
   );
 });
 
+// Ativação do Service Worker
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
@@ -55,12 +58,18 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+// Interceptação de requisições
 self.addEventListener('fetch', (event) => {
-  if (event.request.url.includes('/animes')) {
-    event.respondWith(handleAnimeRequest(event));
+  const url = new URL(event.request.url);
+  const pathParts = url.pathname.split('/').filter(Boolean);
+
+  // Rota /projectid/animes
+  if (pathParts.length === 2 && pathParts[1] === 'animes') {
+    event.respondWith(handleAnimeRequest(pathParts[0]));
     return;
   }
 
+  // Outras requisições
   event.respondWith(
     (async () => {
       try {
@@ -69,7 +78,6 @@ self.addEventListener('fetch', (event) => {
         
         const networkResponse = await fetch(event.request);
         
-        // Cache apenas respostas válidas
         if (networkResponse.ok) {
           const cache = await caches.open(CACHE_NAME);
           cache.put(event.request, networkResponse.clone());
@@ -87,28 +95,70 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
-async function handleAnimeRequest(event) {
+// Manipulador da rota /animes
+async function handleAnimeRequest(projectId) {
   try {
-    const url = new URL(event.request.url);
-    const projectId = url.pathname.split('/')[1];
+    // Obter projetos do cliente
+    const projects = await getProjectsFromClient();
+    const project = projects.find(p => p.id === projectId);
     
+    if (!project) {
+      return new Response(JSON.stringify({ 
+        error: 'Project not found',
+        availableProjects: projects.map(p => p.id)
+      }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Gerar dados de anime (substitua por sua lógica real)
     const animeData = {
       projectId,
+      projectName: project.name,
       animes: [
-        { id: 1, title: "Demon Slayer", episodes: 26 },
-        { id: 2, title: "Jujutsu Kaisen", episodes: 24 }
+        { id: 1, title: "Attack on Titan", episodes: 75, year: 2013 },
+        { id: 2, title: "Demon Slayer", episodes: 26, year: 2019 }
       ],
+      total: 2,
       updatedAt: new Date().toISOString()
     };
     
     return new Response(JSON.stringify(animeData), {
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*'
+      }
     });
   } catch (error) {
-    await sendAlertToClient(`Erro no endpoint /animes: ${error.message}`, 'danger');
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ 
+      error: 'Internal server error',
+      message: error.message
+    }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' }
     });
   }
 }
+
+// Obter projetos do cliente via postMessage
+async function getProjectsFromClient() {
+  return new Promise((resolve) => {
+    const channel = new MessageChannel();
+    channel.port1.onmessage = (event) => {
+      resolve(event.data || []);
+    };
+    
+    self.clients.matchAll()
+      .then(clients => {
+        if (clients && clients.length) {
+          clients[0].postMessage({ 
+            type: 'GET_PROJECTS' 
+          }, [channel.port2]);
+        } else {
+          resolve([]);
+        }
+      })
+      .catch(() => resolve([]));
+  });
+          }
