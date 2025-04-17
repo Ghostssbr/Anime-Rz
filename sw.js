@@ -1,184 +1,155 @@
-document.addEventListener('DOMContentLoaded', async function() {
-    const supabaseUrl = 'https://nwoswxbtlquiekyangbs.supabase.co';
-    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im53b3N3eGJ0bHF1aWVreWFuZ2JzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQ3ODEwMjcsImV4cCI6MjA2MDM1NzAyN30.KarBv9AopQpldzGPamlj3zu9eScKltKKHH2JJblpoCE'; // Sua chave real aqui
-    let supabase;
-    
-    if ('serviceWorker' in navigator) {
-        try {
-            await navigator.serviceWorker.register('/sw.js');
-            console.log('Service Worker registered');
-            
-            // Listen for messages from SW
-            navigator.serviceWorker.addEventListener('message', (event) => {
-                if (event.data.type === 'GET_PROJECTS') {
-                    const projects = JSON.parse(localStorage.getItem('shadowGateProjects3')) || [];
-                    event.ports[0].postMessage(projects);
-                }
-            });
-        } catch (error) {
-            console.error('Service Worker registration failed:', error);
-        }
-    }
+const CACHE_NAME = 'shadow-gate-v7';
+const DATA_CACHE = 'api-data-v4';
 
-    try {
-        supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
-        window.supabase = supabase;
-        showAlert('Conexão com o Supabase estabelecida!', 'success');
-        await loadProjects();
-        setupForm();
-    } catch (error) {
-        showAlert(`Erro de conexão: ${error.message}`, 'danger');
-    }
+self.addEventListener('install', (e) => {
+    e.waitUntil(
+        caches.open(CACHE_NAME).then(cache => cache.addAll([
+            '/',
+            '/home.html',
+            '/dashboard.html',
+            '/app.js',
+            '/dashboard.js',
+            '/dashboard.css',
+            'https://cdn.tailwindcss.com',
+            'https://cdn.jsdelivr.net/npm/chart.js',
+            'https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css',
+            'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2'
+        ]))
+    );
 });
 
-// ... (loadProjects permanece igual)
-
-
-// ... (restante das funções permanecem iguais)
-
-function loadProjects() {
-    const container = document.getElementById('projectsContainer');
-    const noProjects = document.getElementById('noProjects');
-    const projects = JSON.parse(localStorage.getItem('shadowGateProjects3')) || [];
+self.addEventListener('fetch', (e) => {
+    const url = new URL(e.request.url);
     
-    container.innerHTML = '';
-    noProjects.classList.toggle('hidden', projects.length > 0);
+    // Handle /:projectId/animes route
+    const pathParts = url.pathname.split('/').filter(part => part !== '');
+    if (pathParts.length === 2 && pathParts[1] === 'animes') {
+        e.respondWith(
+            handleAnimesRequest(pathParts[0])
+        );
+        return;
+    }
+    
+    if (url.pathname.startsWith('/api/')) {
+        e.respondWith(
+            handleApiRequest(e.request)
+        );
+        return;
+    }
 
-    projects.forEach(project => {
-        const card = document.createElement('div');
-        card.className = 'project-card bg-gray-800 rounded-lg overflow-hidden cursor-pointer';
-        card.innerHTML = `
-            <div class="absolute top-2 right-2 bg-solo-dark text-solo-blue border border-solo-blue px-2 py-1 rounded-full text-xs font-bold tracking-wider">
-                LV. ${project.level}
-            </div>
-            <div class="p-4 border-b border-gray-700">
-                <div class="flex justify-between items-start">
-                    <h3 class="text-lg font-semibold text-white tracking-wider">${project.name}</h3>
-                    <span class="status-badge ${project.status === 'active' ? 'text-green-400' : 'text-yellow-400'} text-xs font-medium px-2 py-0.5 rounded-full bg-opacity-20 ${project.status === 'active' ? 'bg-green-900' : 'bg-yellow-900'}">
-                        ${project.status === 'active' ? 'ACTIVE' : 'INACTIVE'}
-                    </span>
-                </div>
-                <p class="text-xs text-gray-400 mt-1 tracking-wider">CREATED ${new Date(project.createdAt).toLocaleDateString()}</p>
-            </div>
-            <div class="p-4">
-                <div class="flex items-center mb-3">
-                    <i class="bi bi-link text-gray-400 mr-2"></i>
-                    <span class="text-xs text-gray-300 truncate">${project.url}</span>
-                </div>
-                <div class="flex justify-between text-xs text-gray-400 tracking-wider">
-                    <span>${project.requestsToday} REQUESTS TODAY</span>
-                    <span class="flex items-center">
-                        <i class="bi bi-arrow-right text-solo-blue ml-1"></i>
-                    </span>
-                </div>
-            </div>
-        `;
-        card.addEventListener('click', () => window.location.href = `dashboard.html?project=${project.id}`);
-        container.appendChild(card);
-    });
-}
+    e.respondWith(
+        caches.match(e.request)
+            .then(response => response || fetch(e.request))
+    );
+});
 
-function setupForm() {
-    document.getElementById('newProjectForm').addEventListener('submit', async function(e) {
-        e.preventDefault();
+async function handleAnimesRequest(projectId) {
+    try {
+        // Get projects from client
+        const projects = await getProjectsFromClient();
+        const project = projects.find(p => p.id === projectId);
         
-        const projectName = document.getElementById('projectName').value.trim();
-        const spreadsheetUrl = document.getElementById('spreadsheetUrl').value.trim();
-        
-        if (!projectName || !spreadsheetUrl) {
-            showAlert('Preencha todos os campos obrigatórios', 'danger');
-            return;
+        if (!project) {
+            return new Response(JSON.stringify({ 
+                error: 'Project not found',
+                availableProjects: projects.map(p => p.id)
+            }), {
+                status: 404,
+                headers: { 'Content-Type': 'application/json' }
+            });
         }
 
-        let newProject; // Declarar fora do try para acesso no catch
+        // Get anime data (you can replace this with your actual data source)
+        const animeData = await getAnimeData(projectId);
         
-        try {
-            // Gerar ID único seguro
-            const idProject = `gate-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
-            
-            newProject = {
-                id: idProject,
-                name: projectName,
-                url: spreadsheetUrl,
-                status: 'active',
-                createdAt: new Date().toISOString(),
-                requestsToday: 0,
-                totalRequests: 0,
-                level: 1,
-                activityData: generateActivityData()
-            };
-            
-            // Salvar no localStorage
-            let projects = JSON.parse(localStorage.getItem('shadowGateProjects')) || [];
-            projects.push(newProject);
-            localStorage.setItem('shadowGateProjects', JSON.stringify(projects));
-            
-            // Criar token no Supabase
-            const { error } = await supabase
-                .from('project_tokens') // Nome correto da tabela
-                .insert([{
-                    project_id: idProject,
-                    created_at: new Date().toISOString()
-                }]);
-            
-            if (error) {
-                throw new Error(`Supabase: ${error.message}`);
+        return new Response(JSON.stringify(animeData), {
+            headers: { 
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
             }
-            
-            showAlert('Projeto criado com sucesso!', 'success');
-            setTimeout(() => {
-                window.location.href = `dashboard.html?project=${newProject.id}`;
-            }, 1500);
-            
-        } catch (error) {
-            const errorMessage = error.message || 'Erro desconhecido';
-            showAlert(`Erro ao criar projeto: ${errorMessage}`, 'warning');
-            
-            if (newProject) {
-                setTimeout(() => {
-                    window.location.href = `dashboard.html?project=${newProject.id}`;
-                }, 2000);
-            }
-        }
-    });
+        });
+    } catch (error) {
+        return new Response(JSON.stringify({ 
+            error: 'Internal server error',
+            message: error.message
+        }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' }
+        });
+    }
 }
 
+async function getAnimeData(projectId) {
+    // Example data - replace with your actual data source
+    // This could come from localStorage, Supabase, or an external API
+    const animeTitles = [
+        "Attack on Titan",
+        "Demon Slayer",
+        "Jujutsu Kaisen",
+        "My Hero Academia",
+        "Death Note",
+        "Fullmetal Alchemist: Brotherhood",
+        "Hunter x Hunter",
+        "One Punch Man",
+        "Steins;Gate",
+        "Cowboy Bebop"
+    ];
 
-function generateActivityData() {
     return {
-        '7d': Array.from({length: 7}, () => Math.floor(Math.random() * 50) + 10),
-        '30d': Array.from({length: 30}, () => Math.floor(Math.random() * 100) + 20),
-        '90d': Array.from({length: 90}, () => Math.floor(Math.random() * 150) + 30)
+        projectId,
+        projectName: `Anime Portal ${projectId.slice(-3)}`,
+        animes: animeTitles.map((title, index) => ({
+            id: index + 1,
+            title,
+            episodes: Math.floor(Math.random() * 100) + 12,
+            rating: (Math.random() * 5).toFixed(1),
+            year: 2010 + Math.floor(Math.random() * 13)
+        })),
+        total: animeTitles.length,
+        lastUpdated: new Date().toISOString()
     };
 }
 
-async function saveProject(project) {
-    let projects = JSON.parse(localStorage.getItem('shadowGateProjects')) || [];
-    projects.push(project);
-    localStorage.setItem('shadowGateProjects', JSON.stringify(projects));
-    await updateServiceWorkerCache();
+async function getProjectsFromClient() {
+    return new Promise((resolve) => {
+        const channel = new MessageChannel();
+        channel.port1.onmessage = (event) => {
+            resolve(event.data || []);
+        };
+        
+        self.clients.matchAll()
+            .then(clients => {
+                if (clients && clients.length) {
+                    clients[0].postMessage({ 
+                        type: 'GET_PROJECTS' 
+                    }, [channel.port2]);
+                } else {
+                    resolve([]);
+                }
+            })
+            .catch(() => resolve([]));
+    });
 }
 
-async function updateServiceWorkerCache() {
-    if ('caches' in window) {
-        const cache = await caches.open('shadow-gate-data');
-        const projects = JSON.parse(localStorage.getItem('shadowGateProjects')) || [];
-        await cache.put('/projects.json', new Response(JSON.stringify(projects)));
-    }
-}
-
-function showAlert(message, type) {
-    const alert = document.createElement('div');
-    alert.className = `fixed top-4 right-4 p-4 rounded-lg shadow-lg text-white font-semibold tracking-wider z-50 ${
-        type === 'success' ? 'bg-green-600' : 
-        type === 'danger' ? 'bg-red-600' :
-        'bg-blue-600'
-    }`;
-    alert.textContent = message;
-    document.body.appendChild(alert);
+async function handleApiRequest(request) {
+    const cache = await caches.open(DATA_CACHE);
+    const cached = await cache.match(request);
     
-    setTimeout(() => {
-        alert.classList.add('opacity-0', 'transition-opacity', 'duration-500');
-        setTimeout(() => alert.remove(), 500);
-    }, 3000);
+    if (cached) return cached;
+
+    try {
+        const response = await fetch(request);
+        await cache.put(request, response.clone());
+        return response;
+    } catch (error) {
+        return new Response(JSON.stringify({
+            error: 'Offline mode',
+            cached: true
+        }), { 
+            headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            } 
+        });
+    }
 }
