@@ -5,8 +5,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     if ('serviceWorker' in navigator) {
         try {
-            await navigator.serviceWorker.register('/sw.js');
-            console.log('Service Worker registered');
+            await navigator.serviceWorker.register('sw.js');
+            showAlert('Service Worker registered', 'success');
             
             // Listen for messages from SW
             navigator.serviceWorker.addEventListener('message', (event) => {
@@ -16,18 +16,18 @@ document.addEventListener('DOMContentLoaded', async function() {
                 }
             });
         } catch (error) {
-            console.error('Service Worker registration failed:', error);
+            showAlert('Service Worked failed:' + error, 'danger');
         }
     }
 
     try {
         supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
         window.supabase = supabase;
-        showAlert('Conexão com o Supabase estabelecida!', 'success');
+        //showAlert('Conexão com o Supabase estabelecida!', 'success');
         await loadProjects();
         setupForm();
     } catch (error) {
-        showAlert(`Erro de conexão: ${error.message}`, 'danger');
+        showAlert(`Erro: ${error.message}`, 'danger');
     }
 });
 
