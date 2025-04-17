@@ -1,10 +1,8 @@
 document.addEventListener('DOMContentLoaded', async function() {
-    // Initialize Supabase
     const supabaseUrl = 'https://nwoswxbtlquiekyangbs.supabase.co';
-    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'; // Sua chave real aqui
-    window.supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
-
-    // Setup service worker
+    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im53b3N3eGJ0bHF1aWVreWFuZ2JzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQ3ODEwMjcsImV4cCI6MjA2MDM1NzAyN30.KarBv9AopQpldzGPamlj3zu9eScKltKKHH2JJblpoCE'; // Sua chave real aqui
+    let supabase;
+    
     if ('serviceWorker' in navigator) {
         try {
             await navigator.serviceWorker.register('/sw.js');
@@ -22,11 +20,23 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
     }
 
-    await loadProjects();
-    setupForm();
+    try {
+        supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+        window.supabase = supabase;
+        showAlert('Conexão com o Supabase estabelecida!', 'success');
+        await loadProjects();
+        setupForm();
+    } catch (error) {
+        showAlert(`Erro de conexão: ${error.message}`, 'danger');
+    }
 });
 
-async function loadProjects() {
+// ... (loadProjects permanece igual)
+
+
+// ... (restante das funções permanecem iguais)
+
+function loadProjects() {
     const container = document.getElementById('projectsContainer');
     const noProjects = document.getElementById('noProjects');
     const projects = JSON.parse(localStorage.getItem('shadowGateProjects3')) || [];
@@ -61,9 +71,6 @@ async function loadProjects() {
                         <i class="bi bi-arrow-right text-solo-blue ml-1"></i>
                     </span>
                 </div>
-                <div class="mt-2 text-xs text-blue-400">
-                    API: <span class="text-gray-300">/${project.id}/animes</span>
-                </div>
             </div>
         `;
         card.addEventListener('click', () => window.location.href = `dashboard.html?project=${project.id}`);
@@ -79,47 +86,63 @@ function setupForm() {
         const spreadsheetUrl = document.getElementById('spreadsheetUrl').value.trim();
         
         if (!projectName || !spreadsheetUrl) {
-            showAlert('Please fill all required fields', 'danger');
+            showAlert('Preencha todos os campos obrigatórios', 'danger');
             return;
         }
 
-        const newProject = {
-            id: `gate-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-            name: projectName,
-            url: spreadsheetUrl,
-            status: 'active',
-            createdAt: new Date().toISOString(),
-            requestsToday: 0,
-            totalRequests: 0,
-            level: 1,
-            activityData: generateActivityData()
-        };
+        let newProject; // Declarar fora do try para acesso no catch
         
         try {
-            // Save to localStorage
-            let projects = JSON.parse(localStorage.getItem('shadowGateProjects3')) || [];
-            projects.push(newProject);
-            localStorage.setItem('shadowGateProjects3', JSON.stringify(projects));
+            // Gerar ID único seguro
+            const idProject = `gate-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
             
-            // Save to Supabase
+            newProject = {
+                id: idProject,
+                name: projectName,
+                url: spreadsheetUrl,
+                status: 'active',
+                createdAt: new Date().toISOString(),
+                requestsToday: 0,
+                totalRequests: 0,
+                level: 1,
+                activityData: generateActivityData()
+            };
+            
+            // Salvar no localStorage
+            let projects = JSON.parse(localStorage.getItem('shadowGateProjects')) || [];
+            projects.push(newProject);
+            localStorage.setItem('shadowGateProjects', JSON.stringify(projects));
+            
+            // Criar token no Supabase
             const { error } = await supabase
-                .from('project_tokens')
+                .from('project_tokens') // Nome correto da tabela
                 .insert([{
-                    project_id: newProject.id,
+                    project_id: idProject,
                     created_at: new Date().toISOString()
                 }]);
             
-            if (error) throw error;
+            if (error) {
+                throw new Error(`Supabase: ${error.message}`);
+            }
             
-            showAlert('Project created successfully!', 'success');
-            setTimeout(() => loadProjects(), 500);
+            showAlert('Projeto criado com sucesso!', 'success');
+            setTimeout(() => {
+                window.location.href = `dashboard.html?project=${newProject.id}`;
+            }, 1500);
             
         } catch (error) {
-            showAlert(`Error: ${error.message}`, 'danger');
-            console.error(error);
+            const errorMessage = error.message || 'Erro desconhecido';
+            showAlert(`Erro ao criar projeto: ${errorMessage}`, 'warning');
+            
+            if (newProject) {
+                setTimeout(() => {
+                    window.location.href = `dashboard.html?project=${newProject.id}`;
+                }, 2000);
+            }
         }
     });
 }
+
 
 function generateActivityData() {
     return {
@@ -127,6 +150,21 @@ function generateActivityData() {
         '30d': Array.from({length: 30}, () => Math.floor(Math.random() * 100) + 20),
         '90d': Array.from({length: 90}, () => Math.floor(Math.random() * 150) + 30)
     };
+}
+
+async function saveProject(project) {
+    let projects = JSON.parse(localStorage.getItem('shadowGateProjects')) || [];
+    projects.push(project);
+    localStorage.setItem('shadowGateProjects', JSON.stringify(projects));
+    await updateServiceWorkerCache();
+}
+
+async function updateServiceWorkerCache() {
+    if ('caches' in window) {
+        const cache = await caches.open('shadow-gate-data');
+        const projects = JSON.parse(localStorage.getItem('shadowGateProjects')) || [];
+        await cache.put('/projects.json', new Response(JSON.stringify(projects)));
+    }
 }
 
 function showAlert(message, type) {
