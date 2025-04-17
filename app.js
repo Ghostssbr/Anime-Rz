@@ -4,26 +4,31 @@ document.addEventListener('DOMContentLoaded', async function() {
     const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im53b3N3eGJ0bHF1aWVreWFuZ2JzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQ3ODEwMjcsImV4cCI6MjA2MDM1NzAyN30.KarBv9AopQpldzGPamlj3zu9eScKltKKHH2JJblpoCE';
     let supabase;
 
-    // Atualiza contadores diários
+    // Função para verificar e corrigir dados
+    function getProjects() {
+        try {
+            const projects = JSON.parse(localStorage.getItem('shadowGateProjects4')) || [];
+            if (!Array.isArray(projects)) throw new Error('Dados inválidos');
+            return projects.filter(p => p && p.id);
+        } catch (e) {
+            console.error('Corrigindo dados corrompidos...', e);
+            localStorage.setItem('shadowGateProjects4', JSON.stringify([]));
+            return [];
+        }
+    }
+
+    // Atualizar contadores diários
     function updateDailyCounters() {
         const today = new Date().toISOString().split('T')[0];
-        let projects = JSON.parse(localStorage.getItem('shadowGateProjects4')) || [];
-        
-        projects = projects.map(project => {
-            if (project.lastRequestDate !== today) {
-                return {
-                    ...project,
-                    requestsToday: 0,
-                    lastRequestDate: today,
-                    dailyRequests: {
-                        ...project.dailyRequests,
-                        [today]: 0
-                    }
-                };
+        const projects = getProjects().map(project => ({
+            ...project,
+            requestsToday: project.lastRequestDate === today ? project.requestsToday || 0 : 0,
+            lastRequestDate: today,
+            dailyRequests: {
+                ...(project.dailyRequests || {}),
+                [today]: project.lastRequestDate === today ? (project.dailyRequests?.[today] || 0) : 0
             }
-            return project;
-        });
-        
+        }));
         localStorage.setItem('shadowGateProjects4', JSON.stringify(projects));
     }
 
@@ -38,8 +43,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
             navigator.serviceWorker.addEventListener('message', event => {
                 if (event.data.type === 'GET_PROJECTS') {
-                    const projects = JSON.parse(localStorage.getItem('shadowGateProjects4')) || [];
-                    event.ports[0].postMessage(projects);
+                    event.ports[0].postMessage(getProjects());
                 }
             });
 
@@ -54,23 +58,28 @@ document.addEventListener('DOMContentLoaded', async function() {
             });
         } catch (error) {
             console.error('SW registration failed:', error);
+            showAlert('Falha ao registrar Service Worker', 'danger');
         }
     }
 
-    // Supabase
+    // Conexão com Supabase
     try {
         supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
         window.supabase = supabase;
-        await loadProjects();
-        setupForm();
     } catch (error) {
-        showAlert(`Erro: ${error.message}`, 'danger');
+        console.error('Supabase error:', error);
+        showAlert('Erro ao conectar com o banco de dados', 'danger');
     }
+
+    loadProjects();
+    setupForm();
 
     function loadProjects() {
         const container = document.getElementById('projectsContainer');
         const noProjects = document.getElementById('noProjects');
-        const projects = JSON.parse(localStorage.getItem('shadowGateProjects4')) || [];
+        const projects = getProjects();
+        
+        console.log('Projetos carregados:', projects); // Debug
         
         container.innerHTML = '';
         noProjects.classList.toggle('hidden', projects.length > 0);
@@ -80,21 +89,21 @@ document.addEventListener('DOMContentLoaded', async function() {
             card.className = 'project-card bg-gray-800 rounded-lg overflow-hidden cursor-pointer';
             card.innerHTML = `
                 <div class="absolute top-2 right-2 bg-solo-dark text-solo-blue border border-solo-blue px-2 py-1 rounded-full text-xs font-bold tracking-wider">
-                    LV. ${project.level}
+                    LV. ${project.level || 1}
                 </div>
                 <div class="p-4 border-b border-gray-700">
                     <div class="flex justify-between items-start">
-                        <h3 class="text-lg font-semibold text-white tracking-wider">${project.name}</h3>
-                        <span class="status-badge ${project.status === 'active' ? 'text-green-400' : 'text-yellow-400'} text-xs font-medium px-2 py-0.5 rounded-full bg-opacity-20 ${project.status === 'active' ? 'bg-green-900' : 'bg-yellow-900'}">
-                            ${project.status === 'active' ? 'ACTIVE' : 'INACTIVE'}
+                        <h3 class="text-lg font-semibold text-white tracking-wider">${project.name || 'Sem nome'}</h3>
+                        <span class="status-badge ${(project.status || 'active') === 'active' ? 'text-green-400' : 'text-yellow-400'} text-xs font-medium px-2 py-0.5 rounded-full bg-opacity-20 ${(project.status || 'active') === 'active' ? 'bg-green-900' : 'bg-yellow-900'}">
+                            ${(project.status || 'active') === 'active' ? 'ACTIVE' : 'INACTIVE'}
                         </span>
                     </div>
-                    <p class="text-xs text-gray-400 mt-1 tracking-wider">CREATED ${new Date(project.createdAt).toLocaleDateString()}</p>
+                    <p class="text-xs text-gray-400 mt-1 tracking-wider">CREATED ${project.createdAt ? formatDate(project.createdAt) : 'Data desconhecida'}</p>
                 </div>
                 <div class="p-4">
                     <div class="flex items-center mb-3">
                         <i class="bi bi-link text-gray-400 mr-2"></i>
-                        <span class="text-xs text-gray-300 truncate">${project.url}</span>
+                        <span class="text-xs text-gray-300 truncate">${project.url || 'Sem URL'}</span>
                     </div>
                     <div class="flex justify-between text-xs text-gray-400 tracking-wider">
                         <span>${project.requestsToday || 0}/${REQUEST_LIMIT_PER_DAY} REQUESTS TODAY</span>
@@ -104,7 +113,10 @@ document.addEventListener('DOMContentLoaded', async function() {
                     </div>
                 </div>
             `;
-            card.addEventListener('click', () => window.location.href = `dashboard.html?project=${project.id}`);
+            card.addEventListener('click', () => {
+                console.log('Navegando para projeto:', project.id); // Debug
+                window.location.href = `dashboard.html?project=${encodeURIComponent(project.id)}`;
+            });
             container.appendChild(card);
         });
     }
@@ -117,11 +129,11 @@ document.addEventListener('DOMContentLoaded', async function() {
             const spreadsheetUrl = document.getElementById('spreadsheetUrl').value.trim();
             
             if (!projectName || !spreadsheetUrl) {
-                showAlert('Preencha todos os campos', 'danger');
+                showAlert('Preencha todos os campos obrigatórios', 'danger');
                 return;
             }
 
-            const idProject = `gate-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+            const idProject = `gate-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
             const today = new Date().toISOString().split('T')[0];
             
             const newProject = {
@@ -139,35 +151,58 @@ document.addEventListener('DOMContentLoaded', async function() {
             };
             
             try {
-                let projects = JSON.parse(localStorage.getItem('shadowGateProjects4')) || [];
+                const projects = getProjects();
+                
+                // Verificar duplicatas
+                if (projects.some(p => p.id === idProject)) {
+                    throw new Error('Projeto já existe');
+                }
+                
                 projects.push(newProject);
                 localStorage.setItem('shadowGateProjects4', JSON.stringify(projects));
+                console.log('Projeto salvo:', newProject); // Debug
                 
-                const { error } = await supabase
-                    .from('project_tokens')
-                    .insert([{
-                        project_id: idProject,
-                        created_at: new Date().toISOString()
-                    }]);
+                // Supabase
+                if (window.supabase) {
+                    const { error } = await supabase
+                        .from('project_tokens')
+                        .insert([{
+                            project_id: idProject,
+                            created_at: new Date().toISOString()
+                        }]);
+                    
+                    if (error) throw error;
+                }
                 
-                if (error) throw error;
-                
-                showAlert('Projeto criado!', 'success');
-                setTimeout(() => window.location.href = `dashboard.html?project=${idProject}`, 1500);
+                showAlert('Projeto criado com sucesso!', 'success');
+                setTimeout(() => {
+                    window.location.href = `dashboard.html?project=${encodeURIComponent(idProject)}`;
+                }, 1500);
                 
             } catch (error) {
+                console.error('Erro ao criar projeto:', error);
                 showAlert(`Erro: ${error.message}`, 'danger');
-                console.error('Error:', error);
             }
         });
     }
 
+    // Funções auxiliares
     function generateActivityData() {
         return {
             '7d': Array.from({length: 7}, () => Math.floor(Math.random() * 50) + 10),
             '30d': Array.from({length: 30}, () => Math.floor(Math.random() * 100) + 20),
             '90d': Array.from({length: 90}, () => Math.floor(Math.random() * 150) + 30)
         };
+    }
+
+    function formatDate(dateString) {
+        try {
+            const options = { year: 'numeric', month: 'short', day: 'numeric' };
+            return new Date(dateString).toLocaleDateString('en-US', options);
+        } catch (e) {
+            console.error('Erro ao formatar data:', e);
+            return 'Data inválida';
+        }
     }
 
     function showAlert(message, type) {
