@@ -4,21 +4,30 @@ document.addEventListener('DOMContentLoaded', async function() {
     let supabase;
     
     if ('serviceWorker' in navigator) {
-        try {
-            await navigator.serviceWorker.register('/sw.js');
-            showAlert('Service Worker registered', 'success');
-            
-            // Listen for messages from SW
-            navigator.serviceWorker.addEventListener('message', (event) => {
-                if (event.data.type === 'GET_PROJECTS') {
-                    const projects = JSON.parse(localStorage.getItem('shadowGateProjects4')) || [];
-                    event.ports[0].postMessage(projects);
-                }
-            });
-        } catch (error) {
-            showAlert('Service Worked failed:' + error, 'danger');
-        }
+  window.addEventListener('load', async () => {
+    try {
+      const registration = await navigator.serviceWorker.register('/sw.js', {
+        scope: '/'
+      });
+      
+      showAlert('Service Worker registrado com sucesso!', 'success');
+      
+      // Verifica se há atualizações
+      registration.addEventListener('updatefound', () => {
+        const newWorker = registration.installing;
+        newWorker.addEventListener('statechange', () => {
+          if (newWorker.state === 'activated') {
+            showAlert('Nova versão disponível! Atualizando...', 'info');
+            window.location.reload();
+          }
+        });
+      });
+    } catch (error) {
+      showAlert(`Falha no registro do Service Worker: ${error.message}`, 'danger');
+      console.error('SW registration failed:', error);
     }
+  });
+}
 
     try {
         supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
